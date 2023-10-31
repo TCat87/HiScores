@@ -15,17 +15,19 @@ constexpr int DISPLAY_HEIGHT = 720;
 constexpr int DISPLAY_SCALE = 1;
 
 int xOffset = 50;
-int letterCount = 0;
+int inputIndex = 0;//used by MainGameEntry(),MainGameUpdate().
+int entryCount = 0;//
 int letterCountMax = 3;
 int letterID = 0;
-
-bool updateScores = !false;//switch for "add new score" / "show previous scores"
-bool disableEntry = false;
-bool results = true;//IDK
-
+bool updateScores = true;//Score board update ON/OFF
+bool disableEntry = false;//Dissables input
+bool displayResults = false;//Switch for "name entry screen" / "score board screen"
+std::vector<int>currentFrame = { 0, 0, 0 };//WIP
+std::vector<int>currentID = { 0, 0, 0 };//WIP
 std::vector<int> gPlayerEntry(4);
-std::vector<int> gFileData = {};
-std::vector<int> DEFAULTDATA = 
+int NEWSCORE = 323;//Play::RandomRoll(2000);//New Player Score
+std::vector<int> gFileData = {};//Player data from .txt
+std::vector<int> DEFAULTDATA =
 {
 	33, 33, 33, 100,
 	34, 34, 34, 200,
@@ -51,14 +53,11 @@ void Draw();
 
 enum GameObjectType
 {
-	TYPE_PLAYER,
-	TYPE_ENEMY,
-	TYPE_PLATFORM,
-	TYPE_OTHER,															//
-	TYPE_sLETTER,
-	TYPE_DECRYPTED
+	TYPE_LETTER,
+	TYPE_CURSOR,
 };
-//
+
+
 void sort_file_data()
 {
 	int counter = 0;
@@ -101,7 +100,7 @@ void sort_by_score()
 		}
 		gTopPlayers.push_back(tempData);
 		gExTopPlayers[slot][3] = 0;
-		tempData = {0, 0, 0, 0};
+		tempData = { 0, 0, 0, 0 };
 		slot = 0;
 	}
 }
@@ -113,13 +112,13 @@ void remove_worst()
 }
 
 
-void conversion()//will be used to display scores
+void conversion()
 {
 	std::vector<char>letters = {};
-	std::vector<int>v1(26);
-	std::iota(v1.begin(), v1.end(), 33);
-	std::vector<char>v2(26);
-	std::iota(v2.begin(), v2.end(), 'A');
+	std::vector<int>V1(26);
+	std::iota(V1.begin(), V1.end(), 33);
+	std::vector<char>V2(26);
+	std::iota(V2.begin(), V2.end(), 'A');
 	int counter = 0;
 
 	for (int i = 0;i < gTopPlayers.size();++i)
@@ -129,17 +128,16 @@ void conversion()//will be used to display scores
 			if (counter == 3)
 			{
 				counter = 0;
-				//gNames.push_back(letters);
 				std::string gNames2(letters.begin(), letters.end());
 				gNames.push_back(gNames2);
 				letters.clear();
 				break;
 			}
-			for (int k = 0;k < v1.size();++k)
+			for (int k = 0;k < V1.size();++k)
 			{
-				if (gTopPlayers[i][j] == v1[k])
+				if (gTopPlayers[i][j] == V1[k])
 				{
-					letters.push_back(v2[k]);
+					letters.push_back(V2[k]);
 					counter++;
 				}
 			}
@@ -150,12 +148,26 @@ void conversion()//will be used to display scores
 
 void DrawGameStats()
 {
-	//Play::DrawFontText("64px", "Encrypted: " + std::to_string(gPlayerEntry[0]) + " " + std::to_string(gPlayerEntry[1]) + " " + std::to_string(gPlayerEntry[2]), {DISPLAY_WIDTH - 200, 50}, Play::CENTRE);
 	Play::DrawFontText("64px", "Encrypted: " + std::to_string(gPlayerEntry[0]) + " " + std::to_string(gPlayerEntry[1]) + " " + std::to_string(gPlayerEntry[2]), { DISPLAY_WIDTH - 200, 50 }, Play::CENTRE);
-	//Play::DrawFontText("64px", "Loaded: " + std::to_string(ranked_player[0]) + " " + std::to_string(ranked_player[1]) + " " + std::to_string(ranked_player[2]), { DISPLAY_WIDTH - 200, 120 }, Play::CENTRE);
-	Play::DrawFontText("64px", std::to_string(results), { DISPLAY_WIDTH - 200, 190 }, Play::CENTRE);
+	Play::DrawFontText("64px", "Result screen: " + std::to_string(displayResults), { DISPLAY_WIDTH - 200, 115 }, Play::CENTRE);
+	Play::DrawFontText("64px", "Current obj ID: " + std::to_string(currentID[letterID]), { DISPLAY_WIDTH - 200, 190 }, Play::CENTRE);
+	Play::DrawFontText("64px", "Current obj Frame: " + std::to_string(currentFrame[letterID]), { DISPLAY_WIDTH - 200, 255 }, Play::CENTRE);
 }
 
+void DrawCursor()
+{
+	int id = Play::CreateGameObject
+	(
+		TYPE_CURSOR,
+		{
+			DISPLAY_WIDTH / 2 - 150 + xOffset * letterID, 270
+		}, 20, "font132"
+	);
+
+	GameObject& CURSOR = Play::GetGameObject(id);
+	CURSOR.frame = 63;
+	Play::DrawObjectRotated(CURSOR);
+}
 
 bool SaveDefaultScores()
 {
@@ -165,7 +177,7 @@ bool SaveDefaultScores()
 	if (ScoresFile.is_open())           //Safety check if file got open, returns bool value
 	{
 		for (int i = 0; i < DEFAULTDATA.size();++i)
-		{	
+		{
 			ScoresFile << DEFAULTDATA[i] << '\n';
 		}
 	}
@@ -207,7 +219,7 @@ void LoadScores()
 	{
 		SaveDefaultScores();//JFF :).
 	}
-	
+
 	else if (data_file.is_open())
 	{
 		std::string data;
@@ -235,7 +247,7 @@ void showScores()
 	}
 	if (updateScores == false)
 	{
-		
+
 		LoadScores();
 		sort_file_data();
 		sort_by_score();
@@ -243,26 +255,6 @@ void showScores()
 		//Data from file: gNames contains 10 char names("KKK",...,"TTT"), gTopPlayers contains rest of data({52,52,52,1000},...,{43,43,43,100}) Use case: HIGH SCORES button :).
 	}
 }
-/*
-void NameDecryption()
-{
-	std::vector<int> vEncLetters = Play::CollectGameObjectIDsByType(TYPE_sLETTER);
-
-	for (int x = 0; x < 3; x++)
-	{
-		int id = Play::CreateGameObject
-		(																//
-			TYPE_DECRYPTED,												//
-			{															//
-				DISPLAY_WIDTH / 4 - 150 + xOffset * x, 250				//
-			}, 20, "font64"												//
-				
-		);
-		GameObject& objDecLetter = Play::GetGameObject(id);
-		objDecLetter.frame = ranked_player[x];
-	}
-}
-*/
 
 
 // The entry point for a PlayBuffer program
@@ -271,93 +263,104 @@ void MainGameEntry(PLAY_IGNORE_COMMAND_LINE)
 	Play::CreateManager(DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_SCALE);
 	Play::CentreAllSpriteOrigins();
 	Play::LoadBackground("Data//Backgrounds//background.png");
-	//LoadScores();
-	int id = Play::CreateGameObject										//
-	(																	//
-		TYPE_OTHER,														//
-		{																//
-			DISPLAY_WIDTH / 2 - 150 + xOffset * letterCount, 250		//
-		}, 20, "font132"												//
-	);
-	GameObject& objLETTER = Play::GetGameObject(id);
-	objLETTER.frame = 33;//Letter that is displayed at begining
-	gPlayerEntry[letterID] = objLETTER.frame;
-	letterCount++;
+
+	for (letterID; letterID < 3; letterID++)
+	{
+		int id = Play::CreateGameObject
+		(
+			TYPE_LETTER,//TYPE_currentLETTER,
+			{
+				DISPLAY_WIDTH / 2 - 150 + xOffset * inputIndex, 250
+			}, 20, "font132"
+		);
+
+		GameObject& LETTER = Play::GetGameObject(id);//GetGameObjectByType(TYPE_LETTER);//(TYPE_currentLETTER);
+		LETTER.frame = 33;
+		gPlayerEntry[letterID] = LETTER.frame;
+
+		currentFrame[letterID] = LETTER.frame;//for DrawGameStats()
+		currentID[letterID] = id;//for DrawGameStats()
+		inputIndex++;
+	}
+	letterID = 0;
+	inputIndex = 1;
 }
 
 
 // Called by PlayBuffer every frame (60 times a second!)
-bool MainGameUpdate( float elapsedTime )
+bool MainGameUpdate(float elapsedTime)
 {
-	
-	//disableEntry = false;
-	if (Play::KeyPressed(VK_DOWN) && (letterCount <= letterCountMax) && !disableEntry)	//
+
+	if (Play::KeyPressed(VK_UP) && !disableEntry)
 	{
-	
-		GameObject& LETTER = Play::GetGameObjectByType(TYPE_OTHER);
-		LETTER.frame++;
-		if (LETTER.frame == 59)
+		GameObject& tempLETTER = Play::GetGameObject(inputIndex);
+		if (tempLETTER.frame == 33)
 		{
-			LETTER.frame = 33;
-			
+			tempLETTER.frame = 59;
 		}
-		gPlayerEntry[letterID] = LETTER.frame;
-	}																	//
-	
-
-	if (Play::KeyPressed(VK_UP) && (letterCount <= letterCountMax) && !disableEntry)									//
-	{
-
-		GameObject& LETTER = Play::GetGameObjectByType(TYPE_OTHER);
-		if (LETTER.frame == 33)
-		{
-			LETTER.frame = 59;
-
-		}
-		LETTER.frame--;
-		gPlayerEntry[letterID] = LETTER.frame;
-
+		tempLETTER.frame--;
+		gPlayerEntry[letterID] = tempLETTER.frame;
+		currentFrame[letterID] = tempLETTER.frame;
 	}
 
-
-	if (Play::KeyPressed(VK_RIGHT) && (letterCount < letterCountMax) && !disableEntry)
+	if (Play::KeyPressed(VK_DOWN) && !disableEntry)
 	{
-		GameObject& LETTER = Play::GetGameObjectByType(TYPE_OTHER);
+		GameObject& tempLETTER = Play::GetGameObject(inputIndex);
+		if (tempLETTER.frame == 58)
+		{
+			tempLETTER.frame = 32;
+		}
+		tempLETTER.frame++;
+		gPlayerEntry[letterID] = tempLETTER.frame;
+		currentFrame[letterID] = tempLETTER.frame;//WIP
+	}
 
-		
-		LETTER.type = TYPE_sLETTER;
-
-		int id = Play::CreateGameObject									//
-		(																//
-			TYPE_OTHER,													//
-			{															//
-				DISPLAY_WIDTH / 2 - 150 + xOffset * letterCount, 250	//
-			}, 20, "font132"											//
-		);
-		GameObject& objLETTER = Play::GetGameObject(id);
-		objLETTER.frame = 33;
-		letterID++;
-		gPlayerEntry[letterID] = objLETTER.frame;
-		letterCount++;
-	};
-
-
-	if (Play::KeyPressed(VK_RETURN) && (letterCount == letterCountMax) && !disableEntry)
+	if (Play::KeyPressed(VK_RIGHT) && !disableEntry)
 	{
-		results = !results;
-		gPlayerEntry[3] = 601;//Play::RandomRollRange(100, 2000);//////Zaidejo naujas skoras cia
+		GameObject& tempLETTER = Play::GetGameObject(inputIndex);
+		if (inputIndex == 3)
+		{
+			inputIndex = 1;
+			letterID = 0;
+		}
+		else
+		{
+			inputIndex++;
+			letterID++;
+		}
+	}
+
+	if (Play::KeyPressed(VK_LEFT) && !disableEntry)
+	{
+		GameObject& tempLETTER = Play::GetGameObject(inputIndex);
+		if (inputIndex == 1)
+		{
+			inputIndex = 3;
+			letterID = 2;
+		}
+		else
+		{
+			inputIndex--;
+			letterID--;
+		}
+	}
+
+	if (Play::KeyPressed(VK_RETURN) && !disableEntry)
+	{
+		displayResults = true;
+		gPlayerEntry[3] = NEWSCORE;
 		showScores();
 	};
 
 	Draw();
 
-	return Play::KeyDown( VK_ESCAPE );
+	return Play::KeyDown(VK_ESCAPE);
 
 }
 
 
 // Gets called once when the player quits the game 
-int MainGameExit( void )
+int MainGameExit(void)
 {
 	Play::DestroyManager();
 	return PLAY_OK;
@@ -367,54 +370,38 @@ void Draw()
 {
 	Play::ClearDrawingBuffer(Play::cWhite);
 	Play::DrawBackground();
-	if (results == true)
+	if (displayResults == false)
 	{
-		
+
 		Play::DrawFontText("105px", "Enter your name:", { DISPLAY_WIDTH / 2, 150 }, Play::CENTRE);
-		
-		std::vector<int> vSPRAITAI = Play::CollectGameObjectIDsByType(TYPE_OTHER);
-		for (int idPiece : vSPRAITAI)
-		{
-			GameObject& LETTER = Play::GetGameObject(idPiece);
-			Play::DrawObjectRotated(LETTER);
 
-		}
-
-		std::vector<int> vLETTERS = Play::CollectGameObjectIDsByType(TYPE_sLETTER);
+		std::vector<int> vLETTERS = Play::CollectGameObjectIDsByType(TYPE_LETTER);
 		for (int idPiece : vLETTERS)
 		{
 			GameObject& LETTER = Play::GetGameObject(idPiece);
 			Play::DrawObjectRotated(LETTER);
 		}
 	};
-	
-	if (results == false)
+
+	if (displayResults == true)
 	{
 
 		disableEntry = true;
-		//WIP start
 		int LINEHEIGHT = 67;
 		int lineHeight = 67;
-		
-		Play::DrawFontText("64px", "HIGH SCORES: ", { DISPLAY_WIDTH /2, 35 }, Play::CENTRE);
-		//works//Play::DrawFontText("64px", gNames[0] + " " + std::to_string(gTopPlayers[0][3]), {DISPLAY_WIDTH - 1000, 124}, Play::CENTRE);
+
+		Play::DrawFontText("64px", "HIGH SCORES: ", { DISPLAY_WIDTH / 2, 35 }, Play::CENTRE);
 		for (int i = 0; i < gTopPlayers.size(); ++i)
 		{
-			Play::DrawFontText("64px", gNames[i] + "............................................................" + std::to_string(gTopPlayers[i][3]), { DISPLAY_WIDTH /2, (20 + lineHeight) }, Play::CENTRE);
+			Play::DrawFontText("64px", gNames[i] + "............................................................" + std::to_string(gTopPlayers[i][3]), { DISPLAY_WIDTH / 2, (20 + lineHeight) }, Play::CENTRE);
 			lineHeight = LINEHEIGHT + lineHeight;
 		}
 	}
-
-	GameObject& objplayer = Play::GetGameObjectByType(TYPE_PLAYER);
-	Play::DrawObjectRotated(objplayer);
+	if (!disableEntry)
+	{
+		DrawCursor();
+	}
 	DrawGameStats();
 	Play::PresentDrawingBuffer();
-	
+
 }
-
-
-
-
-
-
-
